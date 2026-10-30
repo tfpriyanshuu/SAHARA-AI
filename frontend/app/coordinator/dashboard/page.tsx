@@ -136,6 +136,9 @@ export default function CoordinatorDashboard() {
   const [dialSeniorId, setDialSeniorId] = useState("SEN_001");
   const [dialSeniorName, setDialSeniorName] = useState("Harshit Thakur");
 
+  // ESP32 Live Hardware Telemetry State (Harshit Thakur SEN_001)
+  const [hardwareData, setHardwareData] = useState<any>(null);
+
   // WebRTC Direct In-App Calling (Instagram / Snapchat style)
   const [directCallState, setDirectCallState] = useState<"idle" | "incoming" | "calling" | "connected">("idle");
   const [directCallSeniorId, setDirectCallSeniorId] = useState<string>("SEN_001");
@@ -425,12 +428,17 @@ export default function CoordinatorDashboard() {
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const [seniorsRes, alertsRes] = await Promise.all([
+      const [seniorsRes, alertsRes, hwRes] = await Promise.all([
         fetch("/api/v1/seniors?limit=300", { headers }),
-        fetch("/api/v1/alerts", { headers })
+        fetch("/api/v1/alerts", { headers }),
+        fetch("/api/v1/hardware/status/SEN_001")
       ]);
       const seniorsData = await seniorsRes.json();
       const alertsData = await alertsRes.json();
+      if (hwRes.ok) {
+        const hwData = await hwRes.json();
+        setHardwareData(hwData);
+      }
 
       setSeniors(Array.isArray(seniorsData) ? seniorsData : []);
       setAlerts(Array.isArray(alertsData) ? alertsData : []);
@@ -524,6 +532,37 @@ export default function CoordinatorDashboard() {
       });
 
       es.addEventListener("senior_rescored", () => {
+        setLastSyncSeconds(0);
+        loadData();
+      });
+
+      // Live ESP32 Hardware Telemetry Broadcast (Harshit Thakur)
+      es.addEventListener("hardware_telemetry", (e: any) => {
+        try {
+          const d = JSON.parse(e.data);
+          setLastSyncSeconds(0);
+          const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          setActivityFeed((prev) => [
+            {
+              id: `hw_${Date.now()}`,
+              time: nowStr,
+              senior_name: "Harshit Thakur",
+              senior_id: "SEN_001",
+              type: d.event?.includes("SOS") || d.event?.includes("FALL") ? "emergency" : "completed",
+              message: d.message || `Hardware Telemetry: ${d.event}`
+            },
+            ...prev.slice(0, 9)
+          ]);
+          if (d.event === "MANUAL_SOS" || d.event === "NO_RESPONSE") {
+            setAiCallToast(`🚨 CRITICAL HARDWARE ALERT: ${d.message}`);
+          } else if (d.event === "BOX_OPENED") {
+            setAiCallToast(`💊 Smart Pill Box: Harshit Thakur dose verified taken!`);
+          }
+          loadData();
+        } catch (err) {}
+      });
+
+      es.addEventListener("device_health_changed", () => {
         setLastSyncSeconds(0);
         loadData();
       });
@@ -1241,6 +1280,38 @@ export default function CoordinatorDashboard() {
                                     </span>
                                   </div>
                                 </div>
+
+                                {s.id === "SEN_001" && (
+                                  <div className="mt-2.5 p-2.5 bg-emerald-50 rounded-xl border border-emerald-300 text-xs">
+                                    <div className="flex items-center justify-between font-extrabold text-[#173F35] mb-1.5">
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        <span>{dashboardLang === "hi" ? "3 ESP32 हार्डवेयर (लाइव USB लिंक)" : "3 ESP32 Hardware Link (Live USB)"}</span>
+                                      </span>
+                                      <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">ONLINE</span>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center">
+                                      <div className="bg-white p-1.5 rounded-lg border border-slate-200">
+                                        <span className="text-slate-500 block font-semibold">1. पेंडेंट SOS</span>
+                                        <span className={`font-bold ${hardwareData?.live_telemetry?.fall_status === "MANUAL_SOS" ? "text-rose-600 font-black animate-pulse" : "text-emerald-700"}`}>
+                                          {hardwareData?.live_telemetry?.fall_status || "NORMAL"}
+                                        </span>
+                                      </div>
+                                      <div className="bg-white p-1.5 rounded-lg border border-slate-200">
+                                        <span className="text-slate-500 block font-semibold">2. पिलबॉक्स</span>
+                                        <span className="font-bold text-emerald-700">
+                                          {hardwareData?.live_telemetry?.pillbox_state === "OPEN" ? "OPENED" : "CLOSED ✓"}
+                                        </span>
+                                      </div>
+                                      <div className="bg-white p-1.5 rounded-lg border border-slate-200">
+                                        <span className="text-slate-500 block font-semibold">3. होम हब</span>
+                                        <span className="font-bold text-slate-800">
+                                          {hardwareData?.live_telemetry?.door_state === "OPEN" ? "DOOR OPEN" : "HUB OK"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Box 3: Dual Calls & Care Actions */}
