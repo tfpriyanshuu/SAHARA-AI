@@ -18,7 +18,8 @@ from app.api.v1 import (
     telephony,
     checkins,
     stream,
-    calls
+    calls,
+    hardware
 )
 
 app = FastAPI(
@@ -57,6 +58,7 @@ app.include_router(checkins.router, prefix=f"{settings.API_V1_STR}/checkins", ta
 app.include_router(stream.router, prefix=f"{settings.API_V1_STR}/stream", tags=["Live SSE Event Stream"])
 app.include_router(stream.router, prefix="/api/stream", tags=["Live SSE Stream Alias"])
 app.include_router(calls.router, prefix=f"{settings.API_V1_STR}/calls", tags=["WebRTC Direct App Calling"])
+app.include_router(hardware.router, prefix=f"{settings.API_V1_STR}/hardware", tags=["ESP32 Hardware Integration"])
 
 
 @app.on_event("startup")
