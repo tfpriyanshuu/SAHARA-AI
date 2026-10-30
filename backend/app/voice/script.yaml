@@ -1,0 +1,56 @@
+# SaathiCare Voice Scripts (Sahara AI)
+# Mandated Disclosures & Multilingual Script Variants
+
+branding:
+  caller_name_en: "Sahara AI"
+  caller_name_hi: "सहारा AI"
+  badge: "AI"
+  channel_name: "Sahara AI check-in"
+  notification_title: "Sahara AI (सहारा AI)"
+  subtitle_template_en: "Daily check-in · {coordinator_name} didi ki taraf se"
+  subtitle_template_hi: "रोज़ की बातचीत · {coordinator_name} दीदी की तरफ़ से"
+
+push_payload_spec:
+  contract: "DATA_ONLY_ZERO_PII"
+  fields:
+    type: "checkin_call"
+    checkin_id: "STRING_UUID"
+    expires_at: "ISO_DATETIME"
+
+opening_prompt:
+  hindi: "नमस्ते {senior_name} जी, मैं सहारा AI बोल रही हूँ, {coordinator_name} दीदी की तरफ़ से। मैं एक कंप्यूटर असिस्टेंट हूँ। ये बातचीत रिकॉर्ड होगी और {coordinator_name} दीदी देखेंगी। आपसे बस दो-तीन छोटे सवाल पूछने हैं। बात कर सकते हैं?"
+  roman_hindi: "Namaste {senior_name} ji, main Sahara AI bol rahi hoon, {coordinator_name} didi ki taraf se. Main ek computer assistant hoon. Ye baat-cheet record hogi aur {coordinator_name} didi dekhengi. Aapse bas do-teen chhote sawal poochne hain. Baat kar sakte hain?"
+  english: "Hello {senior_name} ji, I am Sahara AI calling on behalf of {coordinator_name} didi. I am an AI computer assistant. This conversation will be recorded and shared with {coordinator_name} didi. May I ask you two or three brief check-in questions?"
+
+questions:
+  - index: 1
+    cue: "mood_overall"
+    hindi: "आज आप कैसा महसूस कर रहे हैं? अच्छा हो तो 1, ठीक-ठाक हो तो 2, अच्छा नहीं हो तो 3 दबाइए, या बोल दीजिए।"
+    roman_hindi: "Aaj aap kaisa mehsoos kar rahe hain? Achha ho to 1, theek-thaak ho to 2, achha nahi ho to 3 dabaiye, ya bol dijiye."
+    english: "How are you feeling today? Press 1 for good, 2 for okay, 3 for not good, or simply speak out."
+  - index: 2
+    cue: "appetite"
+    hindi: "आज खाना खाया आपने? कितना खाया?"
+    roman_hindi: "Aaj khana khaya aapne? Kitna khaya?"
+    english: "Did you eat today? How was your appetite?"
+  - index: 3
+    cue: "medication"
+    hindi: "आज की दवाई ली?"
+    roman_hindi: "Aaj ki dawai li?"
+    english: "Did you take your prescribed medicines today?"
+  - index: 4
+    cue: "symptoms"
+    hindi: "कहीं दर्द, चक्कर या साँस में तकलीफ़ है आज?"
+    roman_hindi: "Kahin dard, chakkar ya saans mein takleef hai aaj?"
+    english: "Do you have any pain, dizziness, or difficulty breathing today?"
+  - index: 5
+    cue: "open_followup"
+    hindi: "और कुछ बताना चाहते हैं? जो भी मन में हो, बोल दीजिए।"
+    roman_hindi: "Aur kuch batana chahte hain? Jo bhi mann mein ho, bol dijiye."
+    english: "Is there anything else on your mind? Please feel free to share."
+
+emergency_interrupt:
+  hindi: "मैं अभी {coordinator_name} दीदी को बता रही हूँ, आप आराम से बैठिए और लाइन पर रहिए।"
+  roman_hindi: "Main abhi {coordinator_name} didi ko bata rahi hoon, aap aaram se baithiye aur line par rahiye."
+  english: "I am alerting {coordinator_name} didi right now. Please sit down comfortably and stay on the line."
+
