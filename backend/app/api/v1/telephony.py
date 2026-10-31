@@ -234,9 +234,14 @@ def save_completed_routine_call(
     symptoms = accumulated.get("symptoms_reported", "")
     open_remarks = accumulated.get("open_remarks", "")
 
-    # Compile structured transcript
-    mood_str = "अच्छा (1)" if mood_scale == 1 else ("ठीक-ठाक (2)" if mood_scale == 2 else "अच्छा नहीं (3)")
-    transcript_full = f"1. सेहत/मूड: {mood_str} | 2. खाना: {ate_today} | 3. दवा: {'हाँ, ले ली' if took_meds_self else 'नहीं ली/भूल गए'} | 4. लक्षण: {symptoms or 'कोई नहीं'} | 5. टिप्पणी: {open_remarks or 'कोई अन्य बात नहीं'}"
+    # Compile structured transcript from real dialogue or answers
+    dialogue = accumulated.get("dialogue", [])
+    if dialogue and len(dialogue) > 0:
+        lines = [f"{senior.full_name.split()[0] if m.get('sender') == 'senior' else 'सहारा AI'}: {m.get('text')}" for m in dialogue]
+        transcript_full = " \n".join(lines)
+    else:
+        mood_str = "अच्छा (1)" if mood_scale == 1 else ("ठीक-ठाक (2)" if mood_scale == 2 else "अच्छा नहीं (3)")
+        transcript_full = f"1. सेहत/मूड: {mood_str} | 2. खाना: {ate_today} | 3. दवा: {'हाँ, ले ली' if took_meds_self else 'नहीं ली/भूल गए'} | 4. लक्षण: {symptoms or 'कोई नहीं'} | 5. टिप्पणी: {open_remarks or 'कोई अन्य बात नहीं'}"
 
     # Hardware Pill Box Mismatch Verification
     # (Check if hardware reported 0 door/pill dispenses while senior self-reported took_meds)

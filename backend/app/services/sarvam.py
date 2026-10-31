@@ -22,7 +22,7 @@ SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
 def synthesize_speech_sarvam(
     text: str,
     speaker: str = "priya",
-    pace: float = 0.95
+    pace: float = 1.10
 ) -> Optional[Dict[str, Any]]:
     """
     Synthesize natural, warm Hindi speech using Sarvam Bulbul:v3.

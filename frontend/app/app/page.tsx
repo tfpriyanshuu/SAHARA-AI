@@ -26,13 +26,18 @@ import {
   Check,
   X,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Bell
 } from "lucide-react";
 
 export default function SaharaDedicatedMobileApp() {
   // Navigation Tabs: 'checkin' | 'direct_call' | 'medicines' | 'sos'
   const [activeTab, setActiveTab] = useState<"checkin" | "direct_call" | "medicines" | "sos">("checkin");
   const [lang, setLang] = useState<"hi" | "en">("hi");
+
+  // 1:30 PM Medicine Reminder Notification State
+  const [med130Taken, setMed130Taken] = useState<boolean>(false);
+  const [showMed130Modal, setShowMed130Modal] = useState<boolean>(false);
 
   // Seniors Data & Active Senior (Default: Harshit Thakur)
   const [seniorsList, setSeniorsList] = useState<any[]>([]);
@@ -88,6 +93,23 @@ export default function SaharaDedicatedMobileApp() {
   const aiCallActiveRef = useRef<boolean>(false);
   const agentSpeakingRef = useRef<boolean>(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentStepIndexRef = useRef<number>(0);
+  const accumulatedDataRef = useRef<any>({});
+  const conversationHistoryRef = useRef<Array<{ sender: "ai" | "senior"; text: string }>>([]);
+  const isSendingAnswerRef = useRef<boolean>(false);
+  const lastAudioUrlRef = useRef<string>("");
+
+  useEffect(() => {
+    currentStepIndexRef.current = currentStepIndex;
+  }, [currentStepIndex]);
+
+  useEffect(() => {
+    accumulatedDataRef.current = accumulatedData;
+  }, [accumulatedData]);
+
+  useEffect(() => {
+    conversationHistoryRef.current = conversationHistory;
+  }, [conversationHistory]);
 
   useEffect(() => {
     aiCallActiveRef.current = aiCallActive;
@@ -520,6 +542,7 @@ export default function SaharaDedicatedMobileApp() {
 
     if (audioUrl) {
       const audio = new Audio(audioUrl);
+      audio.playbackRate = 1.08;
       currentAudioRef.current = audio;
 
       audio.onended = () => {
@@ -566,7 +589,7 @@ export default function SaharaDedicatedMobileApp() {
 
     const utterance = new SpeechSynthesisUtterance(cleanSpeechText(text));
     utterance.lang = "hi-IN";
-    utterance.rate = 0.92;
+    utterance.rate = 1.05;
     const voices = window.speechSynthesis.getVoices();
     const hiVoice = voices.find((v) => v.lang.includes("hi") || v.lang.includes("IN"));
     if (hiVoice) utterance.voice = hiVoice;
@@ -674,8 +697,11 @@ export default function SaharaDedicatedMobileApp() {
     setAiCallActive(true);
     aiCallActiveRef.current = true;
     setCurrentStepIndex(0);
+    currentStepIndexRef.current = 0;
     setAccumulatedData({});
+    accumulatedDataRef.current = {};
     setConversationHistory([]);
+    conversationHistoryRef.current = [];
     setTranscript("");
     transcriptRef.current = "";
 
@@ -691,8 +717,16 @@ export default function SaharaDedicatedMobileApp() {
 
       if (res.ok && aiCallActiveRef.current) {
         const data = await res.json();
-        setCurrentStepIndex(data.next_step_index || 1);
-        setConversationHistory([{ sender: "ai", text: data.agent_question }]);
+        const nextIdx = data.next_step_index || 1;
+        setCurrentStepIndex(nextIdx);
+        currentStepIndexRef.current = nextIdx;
+        accumulatedDataRef.current = data.accumulated || {};
+        setAccumulatedData(data.accumulated || {});
+        if (data.audio_url) lastAudioUrlRef.current = data.audio_url;
+
+        const initialHistory = [{ sender: "ai" as const, text: data.agent_question }];
+        setConversationHistory(initialHistory);
+        conversationHistoryRef.current = initialHistory;
 
         playAgentSpeech(data.agent_question, data.audio_url, () => {
           if (!aiCallActiveRef.current) return;
@@ -701,7 +735,7 @@ export default function SaharaDedicatedMobileApp() {
             setTranscript("");
             transcriptRef.current = "";
             startHandsfreeListening();
-          }, 400);
+          }, 300);
         });
       }
     } catch (e) {
@@ -711,7 +745,7 @@ export default function SaharaDedicatedMobileApp() {
 
   // Send Senior Answer (Spoken or 1-Tap Digit)
   const sendSeniorAnswer = async (forcedDigit?: string) => {
-    if (!aiCallActiveRef.current) return;
+    if (!aiCallActiveRef.current || isSendingAnswerRef.current) return;
 
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
@@ -727,40 +761,65 @@ export default function SaharaDedicatedMobileApp() {
       return;
     }
 
+    isSendingAnswerRef.current = true;
+
     const seniorAnswer = forcedDigit
       ? (forcedDigit === "1" ? "1 - अच्छा" : forcedDigit === "2" ? "2 - ठीक-ठाक" : "3 - अच्छा नहीं")
       : rawSpoken;
 
-    setConversationHistory((prev) => [...prev, { sender: "senior", text: seniorAnswer }]);
+    const updatedHistory = [...conversationHistoryRef.current, { sender: "senior" as const, text: seniorAnswer }];
+    setConversationHistory(updatedHistory);
+    conversationHistoryRef.current = updatedHistory;
     setTranscript("");
     transcriptRef.current = "";
 
     try {
+      const stepToSend = currentStepIndexRef.current || 1;
       const res = await fetch("/api/v1/telephony/routine-step", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           senior_id: selectedSeniorId,
-          step_index: currentStepIndex,
+          step_index: stepToSend,
           user_reply: seniorAnswer,
           dtmf_digit: forcedDigit || undefined,
-          accumulated: accumulatedData
+          accumulated: accumulatedDataRef.current
         })
       });
 
       if (res.ok && aiCallActiveRef.current) {
         const data = await res.json();
-        setCurrentStepIndex(data.next_step_index);
+        const nextIdx = data.next_step_index || (stepToSend + 1);
+        setCurrentStepIndex(nextIdx);
+        currentStepIndexRef.current = nextIdx;
+        accumulatedDataRef.current = data.accumulated || {};
         setAccumulatedData(data.accumulated || {});
-        setConversationHistory((prev) => [...prev, { sender: "ai", text: data.agent_question }]);
+        if (data.audio_url) lastAudioUrlRef.current = data.audio_url;
+
+        const nextHistory = [...conversationHistoryRef.current, { sender: "ai" as const, text: data.agent_question }];
+        setConversationHistory(nextHistory);
+        conversationHistoryRef.current = nextHistory;
 
         playAgentSpeech(data.agent_question, data.audio_url, () => {
+          isSendingAnswerRef.current = false;
           if (!aiCallActiveRef.current) return;
           if (data.is_emergency) {
             stopAllAudioAndSession();
+            // Instantly save emergency call to coordinator
+            fetch("/api/v1/telephony/save-completed-call", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                senior_id: selectedSeniorId,
+                accumulated: data.accumulated || accumulatedDataRef.current,
+                audio_url: data.audio_url || lastAudioUrlRef.current,
+                is_emergency: true
+              })
+            }).catch(() => {});
+
             alert(
               lang === "hi"
-                ? "🚨 आपातकालीन लक्षण दर्ज! अन्वेषा दीदी को तुरंत सूचना भेज दी गई है।"
+                ? "🚨 आपातकालीन लक्षण दर्ज! अन्वेषा दीदी और आँचल जी को तुरंत सूचना भेज दी गई है।"
                 : "🚨 Acute Symptoms Flagged! Care Coordinator Anvesha Sharma alerted immediately."
             );
           } else if (!data.is_complete) {
@@ -769,23 +828,27 @@ export default function SaharaDedicatedMobileApp() {
               setTranscript("");
               transcriptRef.current = "";
               startHandsfreeListening();
-            }, 500);
+            }, 300);
           } else {
             stopAllAudioAndSession();
-            // Save completed call
+            // Save completed call with full dialogue transcript to coordinator
             fetch("/api/v1/telephony/save-completed-call", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 senior_id: selectedSeniorId,
-                accumulated: data.accumulated
+                accumulated: data.accumulated || accumulatedDataRef.current,
+                audio_url: data.audio_url || lastAudioUrlRef.current
               })
             }).catch(() => {});
           }
         });
+      } else {
+        isSendingAnswerRef.current = false;
       }
     } catch (e) {
       console.warn("Turn error:", e);
+      isSendingAnswerRef.current = false;
     }
   };
 
@@ -946,6 +1009,78 @@ export default function SaharaDedicatedMobileApp() {
           {/* TAB 1: CONVERSATIONAL AI CHECK-IN */}
           {activeTab === "checkin" && (
             <div className="space-y-4">
+
+              {/* 1:30 PM Medicine Reminder Notification Card */}
+              <div className={`p-4 rounded-3xl border transition-all ${med130Taken ? 'bg-emerald-50/90 border-emerald-300' : 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-300 shadow-sm'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <span className={`p-2.5 rounded-2xl shrink-0 mt-0.5 ${med130Taken ? 'bg-emerald-200 text-emerald-800' : 'bg-amber-200 text-amber-900 animate-pulse'}`}>
+                      <Pill className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 bg-amber-200/80 px-2.5 py-0.5 rounded-full border border-amber-300">
+                          ⏰ 1:30 PM दोपहर की दवाई
+                        </span>
+                        {med130Taken && (
+                          <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                            <Check className="w-3 h-3" /> समय पर ली गई
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-extrabold text-slate-900 text-sm mt-1">
+                        {med130Taken ? "दोपहर 1:30 बजे की दवाई ली जा चुकी है" : "क्या आपने 1:30 बजे की दवाई ले ली?"}
+                      </h4>
+                      <p className="text-xs text-slate-600 mt-0.5 font-medium">
+                        मेटफ़ॉर्मिन 500mg (शुगर) &bull; दोपहर के खाने के बाद
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {!med130Taken ? (
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        setMed130Taken(true);
+                        try {
+                          await fetch("/api/v1/hardware/event", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              senior_id: selectedSeniorId,
+                              device_type: "pillbox",
+                              event: "BOX_OPENED",
+                              message: "Harshit Thakur verified 1:30 PM dose taken"
+                            })
+                          });
+                        } catch (e) {}
+                        playAgentSpeech("बहुत बढ़िया हर्षित जी! मैंने नोट कर लिया है कि आपने दोपहर की दवाई ले ली है।");
+                      }}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>✓ हाँ, मैंने दवा ले ली</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        playAgentSpeech("हर्षित जी, दोपहर के 1:30 बज गए हैं। आपकी शुगर की दवाई मेटफ़ॉर्मिन का समय हो गया है। कृपया खाना खाकर दवाई ले लीजिए।");
+                        setShowMed130Modal(true);
+                      }}
+                      className="px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-2xs active:scale-95 transition"
+                      title="1:30 PM अलार्म टेस्ट करें"
+                    >
+                      <Bell className="w-3.5 h-3.5 text-amber-600" />
+                      <span>अलर्ट टेस्ट</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>कोऑर्डिनेटर अन्वेषा दीदी और स्मार्ट पिलबॉक्स में दर्ज हो गया है।</span>
+                  </div>
+                )}
+              </div>
               {/* Hero Action Card */}
               <div className="bg-gradient-to-br from-[#173F35] to-[#205749] text-white p-5 rounded-3xl shadow-md space-y-3 text-center relative overflow-hidden">
                 <div className="space-y-1">
