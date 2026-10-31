@@ -1,11 +1,12 @@
 """Sahara AI Dynamic Two-Way Conversational Engine.
-Powered by Google Gemini 3.5 Flash-Lite & Sarvam AI Bulbul (Priya Voice).
-Provides real natural dialogue, dynamic Q&A, and acute geriatric emergency detection.
+Powered by Google Gemini (gemini-3.1-flash-lite-preview) & Sarvam AI Bulbul (Priya Voice).
+Provides real natural dialogue, dynamic Q&A, empathetic symptom handling, and acute geriatric emergency detection.
 """
 
 import os
 import json
 import logging
+import concurrent.futures
 from typing import Dict, Any, Optional, List
 
 from app.services.gemini import call_gemini_api, clean_hindi_speech_text
@@ -13,12 +14,23 @@ from app.services.sarvam import synthesize_speech_sarvam
 
 logger = logging.getLogger(__name__)
 
-# Core Emergency Keywords for Immediate Local Fallback Detection
+# Module-level thread pool so timeouts return instantly without blocking HTTP thread
+_SARVAM_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+# Core Emergency Keywords for Immediate Escalation
 EMERGENCY_KEYWORDS = [
     "सीने में दर्द", "छाती में दर्द", "दर्द बहुत तेज", "सांस फूल", "सांस नहीं आ रही",
     "चक्कर आ रहे हैं", "बेहोश", "गिर गया", "गिर गई", "खून आ रहा", "बहुत घबराहट",
-    "बुखार", "पेट में दर्द", "पेट दर्द", "bukhar", "fever", "pet dard",
     "chhati me dard", "chest pain", "breathless", "gir gaya", "chakkar"
+]
+
+# Unwell / Sickness / Distress Keywords
+UNWELL_KEYWORDS = [
+    "ठीक नहीं", "अच्छा नहीं", "तबीयत खराब", "तबीयत ठीक नहीं", "बीमार",
+    "दर्द", "सूजन", "गले", "गला", "पेट", "सिर", "कमर", "बुखार",
+    "भारीपन", "कमजोरी", "थकावट", "उल्टी", "खांसी", "जुकाम", "परेशान",
+    "तकलीफ", "तकलीफ़", "theek nahi", "achha nahi", "dard", "bukhar",
+    "gala", "pet", "soojan", "sujan", "bimar", "kamzori"
 ]
 
 
@@ -30,6 +42,14 @@ def check_emergency_symptoms(text: str) -> bool:
     return any(k in lower for k in EMERGENCY_KEYWORDS)
 
 
+def is_unwell_or_distressed(text: str) -> bool:
+    """Detects whether senior expressed discomfort, pain, sickness or negative feelings."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(k in lower for k in UNWELL_KEYWORDS)
+
+
 def generate_gemini_conversational_turn(
     senior_name: str,
     coordinator_name: str,
@@ -39,9 +59,9 @@ def generate_gemini_conversational_turn(
     step_index: int
 ) -> Dict[str, Any]:
     """
-    Calls Gemini 3.5 Flash-Lite to produce a natural, empathetic, logical Hindi response.
-    Understands questions asked by the senior and answers them accurately.
-    Detects severe health emergencies and flags them instantly.
+    Calls Gemini to produce an empathetic, logical Hindi response.
+    Understands questions, symptoms, and feelings.
+    Never auto-hangs up!
     """
     senior_short = senior_name.split()[0] if senior_name else "हर्षित"
     coord_short = coordinator_name.split()[0] if coordinator_name else "अन्वेषा"
@@ -52,37 +72,27 @@ def generate_gemini_conversational_turn(
     )
 
     prompt = f"""
-You are Sahara AI (सहारा AI), an empathetic, intelligent Indian geriatric care voice assistant speaking directly with {senior_name} (72 years old, male, lives in Indore).
-You work closely with Care Coordinator {coordinator_name} (Phone: 8267069623) and his mother/family {family_name} (Phone: 8957266841).
-Senior's Prescribed Medications: Telmisartan 40mg (Morning for BP), Metformin 500mg (1:30 PM Afternoon after lunch for Sugar).
+You are Sahara AI (सहारा AI), an empathetic, caring Indian geriatric voice assistant speaking with {senior_name} (72 yrs old, Indore).
+Care Coordinator: {coordinator_name} (Phone: 8267069623). Mother: {family_name} (Phone: 8957266841).
+Medicines: Telmisartan 40mg (Morning BP), Metformin 500mg (1:30 PM Lunch Sugar).
 
-Recent Conversation History:
+Conversation History:
 {history_formatted}
 
 Senior Citizen just spoke:
 "{user_reply}"
 
-Turn/Step Number: {step_index}
+Turn: {step_index}
 
-INSTRUCTIONS:
-1. ALWAYS LOGICALLY ACKNOWLEDGE AND ANSWER whatever the senior just said or asked!
-   - If the senior asks a question (e.g. who are you, what medicines I take, when is coordinator coming, what is the weather, why are you calling, etc.), ANSWER IT DIRECTLY and warmly!
-   - Never give a canned scripted response or ignore what he said.
-2. CONVERSATIONAL TONE:
-   - Speak in natural, respectful, warm Hindi (देसी और विनम्र बोलचाल, जैसे "जी हर्षित जी...", "हाँ दादाजी...").
-   - Length: Strictly 1 to 2 short sentences (maximum 25-30 words). Keep it brisk for voice playback!
-   - Do NOT use technical jargon or English letters in the reply text. Pure Devanagari Hindi.
-3. HEALTH CHECKFLOW:
-   - If the senior just answered a greeting or general remark, naturally inquire about their health, whether they took their 1:30 PM medicine, had their meal, or slept well.
-4. EMERGENCY DETECTION:
-   - If the senior reports severe chest pain, shortness of breath, severe fall, paralysis, or acute distress, set "is_emergency": true.
-   - For emergencies, immediately comfort them: "हर्षित जी, आप घबराइए मत, मैंने तुरंत अन्वेषा दीदी और आँचल जी को आपातकालीन सूचना भेज दी है। आप आराम से बैठिए।"
-5. GOODBYE DETECTION:
-   - If the senior says goodbye, thanks, or wants to hang up ("ठीक है", "धन्यवाद", "बाय", "फ़ोन रखता हूँ"), set "is_complete": true and give a warm closing blessing.
+RULES:
+1. NEVER say "अच्छा लगा सुनकर" if the senior says they are NOT well, in pain, or have symptoms!
+   - If they report pain, throat swelling, fever, or stomach ache, express IMMEDIATE WARM CONCERN: e.g. "अरे हर्षित जी, यह सुनकर चिंता हुई। क्या आपको बुखार या दर्द भी है? आप आराम करिए..."
+2. Answer any question directly in 1-2 warm Hindi sentences (Devanagari).
+3. Keep the conversation going! Never say goodbye unless the senior explicitly asked to hang up.
 
-Return strictly a valid JSON object matching this schema:
+Return strictly JSON:
 {{
-  "reply": "Short, warm Hindi response in Devanagari",
+  "reply": "Empathetic 1-2 sentence Hindi response in Devanagari",
   "is_emergency": false,
   "emergency_reason": null,
   "is_complete": false,
@@ -91,11 +101,15 @@ Return strictly a valid JSON object matching this schema:
 """
 
     try:
-        raw_json = call_gemini_api(prompt, response_json=True, timeout=2.0)
+        raw_json = call_gemini_api(prompt, response_json=True, timeout=2.2)
         if raw_json:
             parsed = json.loads(raw_json)
             reply = clean_hindi_speech_text(parsed.get("reply", ""))
             if reply:
+                # Sanity guard: if senior expressed illness, ensure AI never says "अच्छा लगा सुनकर"
+                if is_unwell_or_distressed(user_reply) and ("अच्छा लगा" in reply or "बढ़िया" in reply):
+                    reply = f"अरे {senior_short} जी, यह सुनकर चिंता हुई। आप आराम से बैठिए, क्या गले या शरीर में और कोई तकलीफ़ महसूस हो रही है?"
+
                 return {
                     "reply": reply,
                     "is_emergency": bool(parsed.get("is_emergency", False)),
@@ -106,46 +120,114 @@ Return strictly a valid JSON object matching this schema:
     except Exception as e:
         logger.warning(f"Gemini conversational turn notice: {e}")
 
-    # High-quality intelligent local fallback (< 5ms response time)
+    # =========================================================================
+    # INSTANT LOCAL INTELLIGENT & EMPATHETIC ENGINE (< 2ms Response Time)
+    # =========================================================================
     reply_clean = user_reply.strip().lower()
-    is_emerg = check_emergency_symptoms(reply_clean)
-    if is_emerg:
+
+    # 1. Severe Acute Emergency Check
+    if check_emergency_symptoms(reply_clean):
         return {
-            "reply": f"हर्षित जी, आप बिल्कुल घबराइए मत। मैंने तुरंत अन्वेषा दीदी और आँचल जी को सूचित कर दिया है। आप आराम से बैठिए और बताइए अभी कैसा लग रहा है?",
+            "reply": f"हर्षित जी, आप बिल्कुल घबराइए मत। मैंने तुरंत अन्वेषा दीदी और आँचल जी को सूचित कर दिया है। आप आराम से बैठिए और बताइए अभी कैसा महसूस हो रहा है?",
             "is_emergency": True,
-            "emergency_reason": f"Acute distress verbalized: {user_reply[:50]}",
-            "is_complete": False,  # Never auto-cut call
+            "emergency_reason": f"Acute distress: {user_reply[:50]}",
+            "is_complete": False,
             "symptoms_noted": ["acute_chest_or_pain"]
         }
 
-    if any(q in reply_clean for q in ["दवाई", "दवा", "tablet", "medicine"]):
+    # 2. Illness / Pain / Symptoms / Discomfort (NEVER say "अच्छा लगा"!)
+    if is_unwell_or_distressed(reply_clean):
+        if any(w in reply_clean for w in ["गले", "गला", "soojan", "सूजन"]):
+            reply_text = f"अरे हर्षित जी, गले में तकलीफ़ या सूजन की बात सुनकर चिंता हुई। क्या आपको बुखार या निगलने में दर्द भी है? आप थोड़ा गुनगुना पानी पीजिए, मैं तुरंत अन्वेषा दीदी को बता रही हूँ।"
+        elif any(w in reply_clean for w in ["पेट", "pet", "उल्टी"]):
+            reply_text = f"अरे हर्षित जी, पेट में दर्द की बात सुनकर चिंता हुई। क्या आपने दोपहर में कुछ खाया था? आप आराम करिए, मैं अन्वेषा दीदी को सूचित कर रही हूँ।"
+        elif any(w in reply_clean for w in ["बुखार", "bukhar", "fever", "तप"]):
+            reply_text = f"हर्षित जी, आपको बुखार है तो आप तुरंत आराम करिए और पानी पीते रहिए। मैंने अन्वेषा दीदी और आँचल जी को सूचना भेज दी है।"
+        elif any(w in reply_clean for w in ["कमजोरी", "थकान", "कमज़ोरी", "kamzori"]):
+            reply_text = f"हर्षित जी, कमजोरी महसूस हो रही है तो आप आराम से लेट जाइए। क्या आपने आज खाना और पानी समय पर लिया था?"
+        else:
+            reply_text = f"अरे हर्षित जी, आपकी तबीयत ठीक नहीं है यह सुनकर चिंता हुई। क्या परेशानी हो रही है, थोड़ा विस्तार से बताइए? मैं अन्वेषा दीदी को भी बता रही हूँ।"
+
         return {
-            "reply": f"जी हर्षित जी, आपकी दोपहर 1:30 बजे की दवाई मेटफ़ॉर्मिन 500 एमजी है। क्या आपने दोपहर का खाना खाकर दवाई ले ली है?",
+            "reply": reply_text,
+            "is_emergency": False,
+            "emergency_reason": f"Symptom reported: {user_reply[:50]}",
+            "is_complete": False,
+            "symptoms_noted": ["general_symptom"]
+        }
+
+    # 3. Direct Medicine Inquiries
+    if any(q in reply_clean for q in ["दवाई", "दवा", "tablet", "medicine", "goli"]):
+        return {
+            "reply": f"जी हर्षित जी, आपकी सुबह बीपी की दवाई तेलमिसारटन और दोपहर 1:30 बजे शुगर की दवाई मेटफ़ॉर्मिन है। क्या आपने आज दोपहर की दवाई ले ली?",
             "is_emergency": False,
             "emergency_reason": None,
             "is_complete": False,
             "symptoms_noted": []
         }
 
-    if any(gb in reply_clean for gb in ["बाय", "धन्यवाद", "अलविदा", "रखता", "कॉल काटो", "ठीक है बस"]):
+    # 4. Inquiries about Coordinator / Family
+    if any(p in reply_clean for p in ["अन्वेषा", "anvesha", "दीदी", "मम्मी", "anchal", "आँचल"]):
         return {
-            "reply": f"बहुत धन्यवाद हर्षित जी! मैंने आपकी सारी बातें नोट करके अन्वेषा दीदी को भेज दी हैं। आप अपना पूरा ध्यान रखिएगा।",
+            "reply": f"जी हर्षित जी, अन्वेषा दीदी और आपकी मम्मी आँचल जी दोनों सिस्टम पर कनेक्टेड हैं। आपकी कोई भी बात सीधे उन तक पहुँच रही है।",
             "is_emergency": False,
             "emergency_reason": None,
-            "is_complete": False,  # Never auto-cut call
+            "is_complete": False,
             "symptoms_noted": []
         }
 
-    # Contextual progression fallback
+    # 5. Affirmation / Agreement / Ready to Talk (e.g. "हा बात कर सकते हैं", "हाँ", "जी")
+    is_affirming = any(w in reply_clean for w in ["बात कर सकते हैं", "बात कर सकते", "बात कर", "हाँ", "हा", "haan", "boliye", "bolo", "ji haan", "जी हाँ", "जी"]) and not is_unwell_or_distressed(reply_clean)
+    if is_affirming and not any(p in reply_clean for p in ["ठीक", "अच्छा", "मस्त"]):
+        return {
+            "reply": f"जी बहुत अच्छा हर्षित जी! आप बताइए, आज आप कैसा महसूस कर रहे हैं? सब ठीक-ठाक है?",
+            "is_emergency": False,
+            "emergency_reason": None,
+            "is_complete": False,
+            "symptoms_noted": []
+        }
+
+    # 6. Positive / Doing Well (e.g. "ठीक हूँ", "बढ़िया", "अच्छा", "बहुत अच्छा")
+    is_positive = any(p in reply_clean for p in ["ठीक हूँ", "बढ़िया", "अच्छा हूँ", "मस्त", "theek hu", "theek", "1", "अच्छा"]) and not is_unwell_or_distressed(reply_clean)
+    if is_positive:
+        return {
+            "reply": f"जी बहुत अच्छा लगा सुनकर कि आप ठीक हैं! क्या आज आपने दोपहर का खाना खा लिया और 1:30 बजे वाली दवाई समय पर ले ली?",
+            "is_emergency": False,
+            "emergency_reason": None,
+            "is_complete": False,
+            "symptoms_noted": []
+        }
+
+    # 7. Single word "बहुत"
+    if reply_clean in ["बहुत", "bahut"]:
+        return {
+            "reply": f"जी हर्षित जी, आप बताइए आज आपकी सेहत और खाना-पीना कैसा रहा?",
+            "is_emergency": False,
+            "emergency_reason": None,
+            "is_complete": False,
+            "symptoms_noted": []
+        }
+
+    # 8. Goodbye / Hang Up (Acknowledge warmly, but let user click button)
+    if any(gb in reply_clean for gb in ["बाय", "अलविदा", "रखता", "कॉल काटो"]):
+        return {
+            "reply": f"बहुत धन्यवाद हर्षित जी! अपना पूरा ध्यान रखिएगा, कोई भी तकलीफ़ हो तो मुझे तुरंत बताइएगा।",
+            "is_emergency": False,
+            "emergency_reason": None,
+            "is_complete": False,
+            "symptoms_noted": []
+        }
+
+    # 9. General Ongoing Inquiries
     if step_index <= 1:
-        fallback_reply = f"जी बहुत अच्छा लगा सुनकर। क्या आपने आज दोपहर का खाना और 1:30 बजे वाली दवाई समय पर ले ली?"
+        general_reply = f"जी मैं सुन रही हूँ। आप बताइए आज आपका खाना-पीना और सेहत कैसी रही?"
     elif step_index == 2:
-        fallback_reply = f"जी बिल्कुल। शरीर में कहीं कोई दर्द, चक्कर या कमज़ोरी तो महसूस नहीं हो रही आज?"
+        general_reply = f"जी बिल्कुल। क्या आपने 1:30 बजे वाली शुगर की दवाई ले ली है?"
     else:
-        fallback_reply = f"जी समझ गई। और कोई बात जो आप अन्वेषा दीदी या परिवार को बताना चाहते हों?"
+        general_reply = f"जी समझ गई। और कोई बात जो आप बताना चाहते हों?"
 
     return {
-        "reply": fallback_reply,
+        "reply": general_reply,
         "is_emergency": False,
         "emergency_reason": None,
         "is_complete": False,
@@ -164,7 +246,7 @@ def get_routine_call_step(
 ) -> Dict[str, Any]:
     """
     Two-way dialogue engine for Sahara AI.
-    Every answer is analyzed by Gemini 3.5 Flash-Lite and voiced via Sarvam Priya with pace=1.1.
+    Every answer is analyzed with deep empathy, zero delay, and natural tone.
     """
     accumulated = accumulated_data or {}
     senior_short = senior_name.split()[0] if senior_name else "हर्षित"
@@ -197,8 +279,8 @@ def get_routine_call_step(
     if reply_clean:
         dialogue.append({"sender": "senior", "text": reply_clean})
 
-    # Call Gemini 3.5 Flash-Lite for natural two-way response
-    gemini_result = generate_gemini_conversational_turn(
+    # Call empathetic dialogue turn
+    turn_result = generate_gemini_conversational_turn(
         senior_name=senior_name,
         coordinator_name=coordinator_name,
         family_name=family_name,
@@ -207,21 +289,18 @@ def get_routine_call_step(
         step_index=step_index
     )
 
-    spoken_text = gemini_result["reply"]
-    is_emergency = gemini_result["is_emergency"]
-    is_complete = gemini_result["is_complete"]
+    spoken_text = turn_result["reply"]
+    is_emergency = turn_result["is_emergency"]
 
-    # Fast synthesis via Sarvam AI at natural pace 1.0 with 1.5s timeout cap to ensure instant response
+    # Fast synthesis via Sarvam AI at natural pace 1.0 (< 1.2s non-blocking)
     sarvam_audio = None
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(synthesize_speech_sarvam, spoken_text, "priya", 1.0)
-        try:
-            sarvam_audio = future.result(timeout=1.5)
-        except concurrent.futures.TimeoutError:
-            logger.info("Sarvam TTS exceeded 1.5s cap - browser will speak instantly without delay")
-        except Exception as e:
-            logger.warning(f"Sarvam audio notice: {e}")
+    try:
+        future = _SARVAM_EXECUTOR.submit(synthesize_speech_sarvam, spoken_text, "priya", 1.0)
+        sarvam_audio = future.result(timeout=1.2)
+    except concurrent.futures.TimeoutError:
+        logger.info("Sarvam TTS exceeded 1.2s cap - browser speaks immediately with native zero-latency voice")
+    except Exception as e:
+        logger.warning(f"Sarvam audio notice: {e}")
 
     dialogue.append({"sender": "ai", "text": spoken_text})
 
@@ -239,7 +318,7 @@ def get_routine_call_step(
         "audio_url": sarvam_audio.get("audio_url") if sarvam_audio else None,
         "audio_base64": sarvam_audio.get("audio_base64") if sarvam_audio else None,
         "is_emergency": is_emergency,
-        "emergency_reason": gemini_result.get("emergency_reason"),
-        "is_complete": is_complete,
+        "emergency_reason": turn_result.get("emergency_reason"),
+        "is_complete": False,
         "accumulated": accumulated
     }

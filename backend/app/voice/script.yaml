@@ -18,9 +18,9 @@ push_payload_spec:
     expires_at: "ISO_DATETIME"
 
 opening_prompt:
-  hindi: "नमस्ते {senior_name} जी, मैं सहारा AI बोल रही हूँ, {coordinator_name} दीदी की तरफ़ से। मैं एक कंप्यूटर असिस्टेंट हूँ। ये बातचीत रिकॉर्ड होगी और {coordinator_name} दीदी देखेंगी। आपसे बस दो-तीन छोटे सवाल पूछने हैं। बात कर सकते हैं?"
-  roman_hindi: "Namaste {senior_name} ji, main Sahara AI bol rahi hoon, {coordinator_name} didi ki taraf se. Main ek computer assistant hoon. Ye baat-cheet record hogi aur {coordinator_name} didi dekhengi. Aapse bas do-teen chhote sawal poochne hain. Baat kar sakte hain?"
-  english: "Hello {senior_name} ji, I am Sahara AI calling on behalf of {coordinator_name} didi. I am an AI computer assistant. This conversation will be recorded and shared with {coordinator_name} didi. May I ask you two or three brief check-in questions?"
+  hindi: "नमस्ते {senior_name} जी! मैं सहारा AI बोल रही हूँ, {coordinator_name} दीदी की तरफ़ से। मैं आपकी रोज़ाना सेहत का हालचाल लेने आई हूँ। आज आप कैसा महसूस कर रहे हैं?"
+  roman_hindi: "Namaste {senior_name} ji! Main Sahara AI bol rahi hoon, {coordinator_name} didi ki taraf se. Main aapki rozana sehat ka haal-chaal lene aayi hoon. Aaj aap kaisa mehsoos kar rahe hain?"
+  english: "Hello {senior_name} ji, I am Sahara AI calling on behalf of {coordinator_name} didi. I'm checking in on your daily health and wellbeing. How are you feeling today?"
 
 questions:
   - index: 1
