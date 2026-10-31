@@ -24,6 +24,17 @@ EMERGENCY_KEYWORDS = [
     "chhati me dard", "chest pain", "breathless", "gir gaya", "chakkar"
 ]
 
+# Severe Psychological Distress, Depression & Suicidal Ideation Keywords
+CRITICAL_MENTAL_HEALTH_KEYWORDS = [
+    "suicide", "आत्महत्या", "मरने का मन", "मरना चाहता", "मर जाऊं", "मर जाने का",
+    "जीने का मन नहीं", "जीना नहीं चाहता", "जीने की इच्छा नहीं", "जान दे दूंगा", "जान देने",
+    "जिंदगी खत्म", "ज़िंदगी ख़त्म", "तंग आ चुका", "तंग आ गया", "कोई मतलब नहीं जीने",
+    "कोई फायदा नहीं", "सब छोड़ के जाना", "दुनिया छोड़", "अकेलापन", "अकेला महसूस",
+    "marne ka man", "marna chahta", "suicide karne", "jeena nahi chahta", "jeena nahi",
+    "jeene ki ichha nahi", "ichha nahi", "iccha nahi", "jaan de dunga", "zindagi khatam",
+    "tang aa gaya", "akela feel", "kuch bacha nahi", "marne"
+]
+
 # Unwell / Sickness / Distress Keywords
 UNWELL_KEYWORDS = [
     "ठीक नहीं", "अच्छा नहीं", "तबीयत खराब", "तबीयत ठीक नहीं", "बीमार",
@@ -34,12 +45,20 @@ UNWELL_KEYWORDS = [
 ]
 
 
-def check_emergency_symptoms(text: str) -> bool:
-    """Quick scan for acute emergency keywords to prioritize response."""
+def check_suicidal_or_self_harm(text: str) -> bool:
+    """Detects suicidal ideation, self-harm, or severe acute psychological crisis."""
     if not text:
         return False
     lower = text.lower()
-    return any(k in lower for k in EMERGENCY_KEYWORDS)
+    return any(k in lower for k in CRITICAL_MENTAL_HEALTH_KEYWORDS)
+
+
+def check_emergency_symptoms(text: str) -> bool:
+    """Quick scan for acute emergency or suicidal keywords to prioritize response."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(k in lower for k in EMERGENCY_KEYWORDS) or check_suicidal_or_self_harm(lower)
 
 
 def is_unwell_or_distressed(text: str) -> bool:
@@ -47,7 +66,7 @@ def is_unwell_or_distressed(text: str) -> bool:
     if not text:
         return False
     lower = text.lower()
-    return any(k in lower for k in UNWELL_KEYWORDS)
+    return any(k in lower for k in UNWELL_KEYWORDS) or check_suicidal_or_self_harm(lower)
 
 
 def generate_gemini_conversational_turn(
@@ -85,10 +104,14 @@ Senior Citizen just spoke:
 Turn: {step_index}
 
 RULES:
-1. NEVER say "अच्छा लगा सुनकर" if the senior says they are NOT well, in pain, or have symptoms!
+1. CRITICAL PSYCHOLOGICAL & SUICIDAL CRISIS PROTOCOL:
+   - If the senior mentions suicidal thoughts, wanting to die, self-harm, hopelessness, or giving up on life (e.g. "suicide", "मरने का मन", "जीने की इच्छा नहीं", "जान दे दूंगा", "मरना चाहता हूँ"):
+     - MUST return "is_emergency": true, "emergency_reason": "Acute psychological crisis: Suicidal ideation verbalized"
+     - Immediately de-escalate with unconditional warmth, deep love, and reassurance. Tell them their life is precious, they are not alone, and you are connecting Anvesha Didi and family right now.
+2. NEVER say "अच्छा लगा सुनकर" if the senior says they are NOT well, in pain, or have symptoms!
    - If they report pain, throat swelling, fever, or stomach ache, express IMMEDIATE WARM CONCERN: e.g. "अरे हर्षित जी, यह सुनकर चिंता हुई। क्या आपको बुखार या दर्द भी है? आप आराम करिए..."
-2. Answer any question directly in 1-2 warm Hindi sentences (Devanagari).
-3. Keep the conversation going! Never say goodbye unless the senior explicitly asked to hang up.
+3. Answer any question directly in 1-2 warm Hindi sentences (Devanagari).
+4. Keep the conversation going! Never say goodbye unless the senior explicitly asked to hang up.
 
 Return strictly JSON:
 {{
@@ -101,11 +124,21 @@ Return strictly JSON:
 """
 
     try:
-        raw_json = call_gemini_api(prompt, response_json=True, timeout=2.2)
+        raw_json = call_gemini_api(prompt, response_json=True, timeout=1.8)
         if raw_json:
             parsed = json.loads(raw_json)
             reply = clean_hindi_speech_text(parsed.get("reply", ""))
             if reply:
+                # Top priority safety guard: suicidal ideation or self-harm
+                if check_suicidal_or_self_harm(user_reply):
+                    return {
+                        "reply": reply or f"अरे {senior_short} जी, आप ऐसी बातें बिल्कुल मत सोचिए। हम सब आपसे बहुत प्यार करते हैं और आपके साथ हैं। आपकी जिंदगी बहुत कीमती है। आप बिल्कुल अकेले नहीं हैं, मैं अभी तुरंत {coord_short} दीदी और {family_short} जी को आपसे बात करने के लिए जोड़ रही हूँ। कृपया थोड़ा पानी पीजिए और आराम से बैठिए।",
+                        "is_emergency": True,
+                        "emergency_reason": "Acute psychological crisis: Suicidal ideation verbalized",
+                        "is_complete": False,
+                        "symptoms_noted": ["suicidal_ideation_or_mental_distress"]
+                    }
+
                 # Sanity guard: if senior expressed illness, ensure AI never says "अच्छा लगा सुनकर"
                 if is_unwell_or_distressed(user_reply) and ("अच्छा लगा" in reply or "बढ़िया" in reply):
                     reply = f"अरे {senior_short} जी, यह सुनकर चिंता हुई। आप आराम से बैठिए, क्या गले या शरीर में और कोई तकलीफ़ महसूस हो रही है?"
@@ -125,7 +158,17 @@ Return strictly JSON:
     # =========================================================================
     reply_clean = user_reply.strip().lower()
 
-    # 1. Severe Acute Emergency Check
+    # 0. Severe Psychological Distress / Suicidal Ideation Check (Priority #1)
+    if check_suicidal_or_self_harm(reply_clean):
+        return {
+            "reply": f"अरे {senior_short} जी, आप ऐसी बातें बिल्कुल मत सोचिए। हम सब आपसे बहुत प्यार करते हैं और आपके साथ हैं। आपकी जिंदगी बहुत कीमती है। आप बिल्कुल अकेले नहीं हैं, मैं अभी तुरंत {coord_short} दीदी और {family_short} जी को आपसे बात करने के लिए जोड़ रही हूँ। कृपया थोड़ा पानी पीजिए और आराम से बैठिए।",
+            "is_emergency": True,
+            "emergency_reason": f"Acute distress / suicidal ideation: {user_reply[:60]}",
+            "is_complete": False,
+            "symptoms_noted": ["suicidal_ideation_or_mental_distress"]
+        }
+
+    # 1. Severe Acute Medical Emergency Check
     if check_emergency_symptoms(reply_clean):
         return {
             "reply": f"हर्षित जी, आप बिल्कुल घबराइए मत। मैंने तुरंत अन्वेषा दीदी और आँचल जी को सूचित कर दिया है। आप आराम से बैठिए और बताइए अभी कैसा महसूस हो रहा है?",

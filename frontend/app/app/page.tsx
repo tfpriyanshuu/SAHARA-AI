@@ -84,6 +84,7 @@ export default function SaharaDedicatedMobileApp() {
   const [conversationHistory, setConversationHistory] = useState<Array<{ sender: "ai" | "senior"; text: string }>>([]);
   const [transcript, setTranscript] = useState<string>("");
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isThinking, setIsThinking] = useState<boolean>(false);
   const [sosTriggered, setSosTriggered] = useState<boolean>(false);
 
   const recognitionRef = useRef<any>(null);
@@ -144,6 +145,7 @@ export default function SaharaDedicatedMobileApp() {
     setAiCallActive(false);
     setAgentSpeaking(false);
     setIsRecording(false);
+    setIsThinking(false);
 
     // 2. Clear any pending auto-submit / silence timers
     if (silenceTimeoutRef.current) {
@@ -541,6 +543,7 @@ export default function SaharaDedicatedMobileApp() {
       try { window.speechSynthesis.cancel(); } catch (e) {}
     }
 
+    setIsThinking(false);
     setAgentSpeaking(true);
     agentSpeakingRef.current = true;
     if (recognitionRef.current) {
@@ -654,14 +657,13 @@ export default function SaharaDedicatedMobileApp() {
           transcriptRef.current = spoken;
           setTranscript(spoken);
 
-          // 3-5 seconds pause window: keep listening as long as senior speaks
-          // Resets on each spoken syllable; only submits after 3.5s of continuous silence
+          // Snappy Turnaround: submit automatically 1.1s after senior stops speaking
           if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
           silenceTimeoutRef.current = setTimeout(() => {
             if (aiCallActiveRef.current && !agentSpeakingRef.current && transcriptRef.current.trim()) {
               sendSeniorAnswer();
             }
-          }, 3500);
+          }, 1100);
         }
       };
 
@@ -772,6 +774,7 @@ export default function SaharaDedicatedMobileApp() {
     }
 
     isSendingAnswerRef.current = true;
+    setIsThinking(true);
 
     const seniorAnswer = forcedDigit
       ? (forcedDigit === "1" ? "1 - अच्छा" : forcedDigit === "2" ? "2 - ठीक-ठाक" : "3 - अच्छा नहीं")
@@ -850,10 +853,12 @@ export default function SaharaDedicatedMobileApp() {
         });
       } else {
         isSendingAnswerRef.current = false;
+        setIsThinking(false);
       }
     } catch (e) {
       console.warn("Turn error:", e);
       isSendingAnswerRef.current = false;
+      setIsThinking(false);
     }
   };
 
@@ -1129,13 +1134,17 @@ export default function SaharaDedicatedMobileApp() {
                 <div className="bg-emerald-50/90 border-2 border-emerald-300 rounded-2xl p-3.5 shadow-xs space-y-2 animate-in fade-in">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${isRecording ? "bg-rose-500 animate-ping" : agentSpeaking ? "bg-blue-500" : "bg-emerald-500"}`}></span>
+                      <span className={`w-2.5 h-2.5 rounded-full ${isThinking ? "bg-amber-500 animate-pulse" : isRecording ? "bg-rose-500 animate-ping" : agentSpeaking ? "bg-blue-500" : "bg-emerald-500"}`}></span>
                       <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <Mic className="w-4 h-4 text-emerald-700" />
-                        {agentSpeaking ? "सहारा AI बोल रही है (कृपया सुनें)..." : "आपकी आवाज़ (Live Voice Transcript):"}
+                        {isThinking
+                          ? "सहारा AI उत्तर तैयार कर रही है..."
+                          : agentSpeaking
+                          ? "सहारा AI बोल रही है (कृपया सुनें)..."
+                          : "आपकी आवाज़ (Live Voice Transcript):"}
                       </span>
                     </div>
-                    {transcript && !agentSpeaking && (
+                    {transcript && !agentSpeaking && !isThinking && (
                       <button
                         onClick={() => sendSeniorAnswer()}
                         className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-xl shadow-xs transition active:scale-95"
@@ -1146,13 +1155,17 @@ export default function SaharaDedicatedMobileApp() {
                   </div>
                   <div className="bg-white p-3 rounded-xl border border-emerald-200 min-h-[46px] flex items-center">
                     <p className="text-sm font-bold text-slate-900 leading-relaxed">
-                      {transcript ? (
+                      {isThinking ? (
+                        <span className="text-amber-700 font-semibold italic text-xs animate-pulse">
+                          ⏳ सहारा AI सुन रही है और उत्तर तैयार कर रही है...
+                        </span>
+                      ) : transcript ? (
                         <span>&ldquo;{transcript}&rdquo;</span>
                       ) : agentSpeaking ? (
                         <span className="text-blue-700 font-medium italic text-xs">सहारा AI का सवाल सुनिए...</span>
                       ) : (
                         <span className="text-slate-400 font-normal italic text-xs">
-                          बोलिए, सहारा AI सुन रही है... (बोलना पूरा होने पर 3.5 सेकंड में अपने-आप भेजा जाएगा, या &ldquo;उत्तर भेजें&rdquo; दबाएँ)
+                          बोलिए, माइक सुन रहा है... (जैसे ही बोलना बंद करेंगे, सहारा AI तुरंत उत्तर देगी)
                         </span>
                       )}
                     </p>
