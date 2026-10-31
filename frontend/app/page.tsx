@@ -47,8 +47,8 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    // Attempt live fetch from backend overview endpoint if running
-    fetch("http://localhost:8000/api/v1/operations/overview")
+    // Live fetch from backend overview endpoint
+    fetch("/api/v1/operations/overview")
       .then((res) => res.json())
       .then((data) => {
         if (data.total_monitored_seniors) {

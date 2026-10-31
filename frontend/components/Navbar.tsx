@@ -45,7 +45,13 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop Nav Links */}
-          <div className="hidden md:flex items-center gap-6 text-sm font-medium text-emerald-100">
+          <div className="hidden md:flex items-center gap-5 text-sm font-medium text-emerald-100">
+            <Link
+              href="/app"
+              className="bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 font-bold px-3 py-1 rounded-lg transition-all flex items-center gap-1.5 text-xs shadow-xs"
+            >
+              <span>📱 वरिष्ठ नागरिक ऐप</span>
+            </Link>
             <Link href="/#problem" className="hover:text-white transition-colors">The Challenge</Link>
             <Link href="/#how-it-works" className="hover:text-white transition-colors">How It Works</Link>
             <Link href="/#features" className="hover:text-white transition-colors">Features</Link>
@@ -109,7 +115,14 @@ export default function Navbar() {
 
       {/* Mobile Menu Dropdown */}
       {menuOpen && (
-        <div className="md:hidden bg-[#173F35] border-t border-[#278C78]/30 px-4 pt-2 pb-4 space-y-2 text-sm">
+        <div className="md:hidden bg-[#173F35] border-t border-[#278C78]/30 px-4 pt-3 pb-4 space-y-2.5 text-sm">
+          <Link
+            href="/app"
+            onClick={() => setMenuOpen(false)}
+            className="block py-2.5 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-center shadow-md text-sm"
+          >
+            📱 वरिष्ठ नागरिक ऐप खोलें (Senior Citizen App)
+          </Link>
           <Link href="/#problem" onClick={() => setMenuOpen(false)} className="block py-1.5 text-emerald-100 hover:text-white">The Challenge</Link>
           <Link href="/#how-it-works" onClick={() => setMenuOpen(false)} className="block py-1.5 text-emerald-100 hover:text-white">How It Works</Link>
           <Link href="/#features" onClick={() => setMenuOpen(false)} className="block py-1.5 text-emerald-100 hover:text-white">Features</Link>
