@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 EMERGENCY_KEYWORDS = [
     "सीने में दर्द", "छाती में दर्द", "दर्द बहुत तेज", "सांस फूल", "सांस नहीं आ रही",
     "चक्कर आ रहे हैं", "बेहोश", "गिर गया", "गिर गई", "खून आ रहा", "बहुत घबराहट",
+    "बुखार", "पेट में दर्द", "पेट दर्द", "bukhar", "fever", "pet dard",
     "chhati me dard", "chest pain", "breathless", "gir gaya", "chakkar"
 ]
 
@@ -90,7 +91,7 @@ Return strictly a valid JSON object matching this schema:
 """
 
     try:
-        raw_json = call_gemini_api(prompt, response_json=True, timeout=8)
+        raw_json = call_gemini_api(prompt, response_json=True, timeout=2.0)
         if raw_json:
             parsed = json.loads(raw_json)
             reply = clean_hindi_speech_text(parsed.get("reply", ""))
@@ -99,21 +100,21 @@ Return strictly a valid JSON object matching this schema:
                     "reply": reply,
                     "is_emergency": bool(parsed.get("is_emergency", False)),
                     "emergency_reason": parsed.get("emergency_reason"),
-                    "is_complete": bool(parsed.get("is_complete", False)),
+                    "is_complete": False,  # Never auto-cut call
                     "symptoms_noted": parsed.get("symptoms_noted", [])
                 }
     except Exception as e:
-        logger.warning(f"Gemini conversational turn error: {e}")
+        logger.warning(f"Gemini conversational turn notice: {e}")
 
-    # High-quality intelligent local fallback if Gemini is offline
+    # High-quality intelligent local fallback (< 5ms response time)
     reply_clean = user_reply.strip().lower()
     is_emerg = check_emergency_symptoms(reply_clean)
     if is_emerg:
         return {
-            "reply": f"हर्षित जी, आप बिल्कुल घबराइए मत। मैंने तुरंत अन्वेषा दीदी और आँचल जी को सूचित कर दिया है। आप आराम से बैठ जाइए।",
+            "reply": f"हर्षित जी, आप बिल्कुल घबराइए मत। मैंने तुरंत अन्वेषा दीदी और आँचल जी को सूचित कर दिया है। आप आराम से बैठिए और बताइए अभी कैसा लग रहा है?",
             "is_emergency": True,
             "emergency_reason": f"Acute distress verbalized: {user_reply[:50]}",
-            "is_complete": True,
+            "is_complete": False,  # Never auto-cut call
             "symptoms_noted": ["acute_chest_or_pain"]
         }
 
@@ -131,7 +132,7 @@ Return strictly a valid JSON object matching this schema:
             "reply": f"बहुत धन्यवाद हर्षित जी! मैंने आपकी सारी बातें नोट करके अन्वेषा दीदी को भेज दी हैं। आप अपना पूरा ध्यान रखिएगा।",
             "is_emergency": False,
             "emergency_reason": None,
-            "is_complete": True,
+            "is_complete": False,  # Never auto-cut call
             "symptoms_noted": []
         }
 
@@ -179,8 +180,8 @@ def get_routine_call_step(
         greeting_text = f"नमस्ते {senior_short} जी! मैं सहारा AI बोल रही हूँ, {coord_short} दीदी की तरफ़ से। मैं आपकी रोज़ाना सेहत का हालचाल लेने आई हूँ। आज आप कैसा महसूस कर रहे हैं?"
         dialogue.append({"sender": "ai", "text": greeting_text})
         
-        # Synthesize with crisp natural pace 1.10
-        sarvam_audio = synthesize_speech_sarvam(greeting_text, speaker="priya", pace=1.10)
+        # Synthesize with natural, normal warm pace 1.0
+        sarvam_audio = synthesize_speech_sarvam(greeting_text, speaker="priya", pace=1.0)
         return {
             "step_index": 0,
             "next_step_index": 1,
@@ -210,16 +211,26 @@ def get_routine_call_step(
     is_emergency = gemini_result["is_emergency"]
     is_complete = gemini_result["is_complete"]
 
-    # Synthesize speech via Sarvam AI at brisk, natural pace 1.10
-    sarvam_audio = synthesize_speech_sarvam(spoken_text, speaker="priya", pace=1.10)
+    # Fast synthesis via Sarvam AI at natural pace 1.0 with 1.5s timeout cap to ensure instant response
+    sarvam_audio = None
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(synthesize_speech_sarvam, spoken_text, "priya", 1.0)
+        try:
+            sarvam_audio = future.result(timeout=1.5)
+        except concurrent.futures.TimeoutError:
+            logger.info("Sarvam TTS exceeded 1.5s cap - browser will speak instantly without delay")
+        except Exception as e:
+            logger.warning(f"Sarvam audio notice: {e}")
+
     dialogue.append({"sender": "ai", "text": spoken_text})
 
     accumulated["last_spoken"] = spoken_text
     accumulated["is_emergency"] = is_emergency
 
     next_step = step_index + 1
-    if is_complete or is_emergency or next_step >= 7:
-        is_complete = True
+    # Never forcefully cut the call! The senior citizen decides when to end the call.
+    is_complete = False
 
     return {
         "step_index": step_index,

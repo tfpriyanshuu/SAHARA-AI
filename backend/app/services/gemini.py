@@ -31,7 +31,11 @@ def call_gemini_api(prompt: str, response_json: bool = True, timeout: int = 15, 
             "contents": [{"parts": parts}]
         }
         if response_json:
-            payload["generationConfig"] = {"responseMimeType": "application/json", "temperature": 0.2}
+            payload["generationConfig"] = {
+                "responseMimeType": "application/json",
+                "temperature": 0.2,
+                "maxOutputTokens": 100
+            }
         else:
             payload["generationConfig"] = {"temperature": 0.5}
 

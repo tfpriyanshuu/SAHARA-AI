@@ -542,7 +542,7 @@ export default function SaharaDedicatedMobileApp() {
 
     if (audioUrl) {
       const audio = new Audio(audioUrl);
-      audio.playbackRate = 1.08;
+      audio.playbackRate = 1.0;
       currentAudioRef.current = audio;
 
       audio.onended = () => {
@@ -589,7 +589,7 @@ export default function SaharaDedicatedMobileApp() {
 
     const utterance = new SpeechSynthesisUtterance(cleanSpeechText(text));
     utterance.lang = "hi-IN";
-    utterance.rate = 1.05;
+    utterance.rate = 1.0;
     const voices = window.speechSynthesis.getVoices();
     const hiVoice = voices.find((v) => v.lang.includes("hi") || v.lang.includes("IN"));
     if (hiVoice) utterance.voice = hiVoice;
@@ -647,13 +647,13 @@ export default function SaharaDedicatedMobileApp() {
           transcriptRef.current = spoken;
           setTranscript(spoken);
 
-          // Auto-submit after 1.5s pause
+          // Auto-submit after 600ms natural pause (2.5x faster response)
           if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
           silenceTimeoutRef.current = setTimeout(() => {
             if (aiCallActiveRef.current && !agentSpeakingRef.current && transcriptRef.current.trim()) {
               sendSeniorAnswer();
             }
-          }, 1500);
+          }, 600);
         }
       };
 
@@ -803,9 +803,9 @@ export default function SaharaDedicatedMobileApp() {
         playAgentSpeech(data.agent_question, data.audio_url, () => {
           isSendingAnswerRef.current = false;
           if (!aiCallActiveRef.current) return;
+
+          // If emergency detected, record in background and alert coordinator immediately
           if (data.is_emergency) {
-            stopAllAudioAndSession();
-            // Instantly save emergency call to coordinator
             fetch("/api/v1/telephony/save-completed-call", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -816,22 +816,8 @@ export default function SaharaDedicatedMobileApp() {
                 is_emergency: true
               })
             }).catch(() => {});
-
-            alert(
-              lang === "hi"
-                ? "🚨 आपातकालीन लक्षण दर्ज! अन्वेषा दीदी और आँचल जी को तुरंत सूचना भेज दी गई है।"
-                : "🚨 Acute Symptoms Flagged! Care Coordinator Anvesha Sharma alerted immediately."
-            );
-          } else if (!data.is_complete) {
-            setTimeout(() => {
-              if (!aiCallActiveRef.current) return;
-              setTranscript("");
-              transcriptRef.current = "";
-              startHandsfreeListening();
-            }, 300);
           } else {
-            stopAllAudioAndSession();
-            // Save completed call with full dialogue transcript to coordinator
+            // Keep saving ongoing transcript periodically
             fetch("/api/v1/telephony/save-completed-call", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -842,6 +828,14 @@ export default function SaharaDedicatedMobileApp() {
               })
             }).catch(() => {});
           }
+
+          // NEVER HANG UP AUTOMATICALLY! The senior citizen stays on the call and cuts it when ready.
+          setTimeout(() => {
+            if (!aiCallActiveRef.current) return;
+            setTranscript("");
+            transcriptRef.current = "";
+            startHandsfreeListening();
+          }, 200);
         });
       } else {
         isSendingAnswerRef.current = false;
