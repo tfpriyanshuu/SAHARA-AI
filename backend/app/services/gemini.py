@@ -59,7 +59,9 @@ def clean_hindi_speech_text(text: str) -> str:
     if not text:
         return ""
     cleaned = (
-        text.replace("?", "। ")
+        text.replace("1:30", "डेढ़")
+        .replace("1.30", "डेढ़")
+        .replace("?", "। ")
         .replace("???", "। ")
         .replace("??", "। ")
         .replace("!", "। ")

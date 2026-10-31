@@ -119,13 +119,20 @@ export default function SaharaDedicatedMobileApp() {
     agentSpeakingRef.current = agentSpeaking;
   }, [agentSpeaking]);
 
-  // Clean Hindi Speech for Web TTS so it never speaks "question mark"
+  // Clean Hindi Speech for Web TTS so it never speaks "question mark", "comma", or "colon"
   const cleanSpeechText = (text: string) => {
     return text
+      .replace(/1:30/g, "डेढ़")
+      .replace(/1\.30/g, "डेढ़")
+      .replace(/,/g, " ")
+      .replace(/;/g, " ")
+      .replace(/:/g, " ")
       .replace(/\?/g, "। ")
       .replace(/\!/g, "। ")
       .replace(/\*/g, "")
       .replace(/\"/g, "")
+      .replace(/\'/g, "")
+      .replace(/\s+/g, " ")
       .trim();
   };
 
@@ -614,7 +621,7 @@ export default function SaharaDedicatedMobileApp() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Hands-free Real Microphone Listening (Fine-Tuned Speech-to-Text)
+  // Hands-free Real Microphone Listening (Fine-Tuned Speech-to-Text with 3.5s pause window)
   const startHandsfreeListening = async () => {
     if (!aiCallActiveRef.current || agentSpeakingRef.current) return;
     try {
@@ -627,7 +634,7 @@ export default function SaharaDedicatedMobileApp() {
 
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
-      recognition.continuous = false; // Turn-based listening prevents ghost looping
+      recognition.continuous = true; // Continuous listening: does not cut off senior mid-sentence!
       recognition.interimResults = true;
       recognition.lang = "hi-IN";
 
@@ -637,36 +644,38 @@ export default function SaharaDedicatedMobileApp() {
         let final = "";
         for (let i = 0; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
+            final += event.results[i][0].transcript + " ";
           } else {
             interim += event.results[i][0].transcript;
           }
         }
-        const spoken = (final || interim).trim();
+        const spoken = (final + interim).trim();
         if (spoken) {
           transcriptRef.current = spoken;
           setTranscript(spoken);
 
-          // Auto-submit after 600ms natural pause (2.5x faster response)
+          // 3-5 seconds pause window: keep listening as long as senior speaks
+          // Resets on each spoken syllable; only submits after 3.5s of continuous silence
           if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
           silenceTimeoutRef.current = setTimeout(() => {
             if (aiCallActiveRef.current && !agentSpeakingRef.current && transcriptRef.current.trim()) {
               sendSeniorAnswer();
             }
-          }, 600);
+          }, 3500);
         }
       };
 
       recognition.onend = () => {
         setIsRecording(false);
-        if (!aiCallActiveRef.current) return;
-        if (!agentSpeakingRef.current) {
-          if (transcriptRef.current.trim()) {
-            sendSeniorAnswer();
-          } else {
-            // Keep listening if call is active and nothing was spoken yet
-            try { recognition.start(); } catch (e) {}
-          }
+        if (!aiCallActiveRef.current || agentSpeakingRef.current) return;
+
+        // If senior paused (silence timeout still pending) or hasn't spoken yet,
+        // keep mic alive so they are never interrupted mid-thought!
+        if (silenceTimeoutRef.current || !transcriptRef.current.trim()) {
+          try {
+            recognition.start();
+            setIsRecording(true);
+          } catch (e) {}
         }
       };
 
@@ -722,13 +731,14 @@ export default function SaharaDedicatedMobileApp() {
         currentStepIndexRef.current = nextIdx;
         accumulatedDataRef.current = data.accumulated || {};
         setAccumulatedData(data.accumulated || {});
-        if (data.audio_url) lastAudioUrlRef.current = data.audio_url;
+        const audioSrc = data.audio_base64 || data.audio_url;
+        if (data.audio_url || data.audio_base64) lastAudioUrlRef.current = data.audio_url || data.audio_base64;
 
         const initialHistory = [{ sender: "ai" as const, text: data.agent_question }];
         setConversationHistory(initialHistory);
         conversationHistoryRef.current = initialHistory;
 
-        playAgentSpeech(data.agent_question, data.audio_url, () => {
+        playAgentSpeech(data.agent_question, audioSrc, () => {
           if (!aiCallActiveRef.current) return;
           setTimeout(() => {
             if (!aiCallActiveRef.current) return;
@@ -794,13 +804,14 @@ export default function SaharaDedicatedMobileApp() {
         currentStepIndexRef.current = nextIdx;
         accumulatedDataRef.current = data.accumulated || {};
         setAccumulatedData(data.accumulated || {});
-        if (data.audio_url) lastAudioUrlRef.current = data.audio_url;
+        const audioSrc = data.audio_base64 || data.audio_url;
+        if (data.audio_url || data.audio_base64) lastAudioUrlRef.current = data.audio_url || data.audio_base64;
 
         const nextHistory = [...conversationHistoryRef.current, { sender: "ai" as const, text: data.agent_question }];
         setConversationHistory(nextHistory);
         conversationHistoryRef.current = nextHistory;
 
-        playAgentSpeech(data.agent_question, data.audio_url, () => {
+        playAgentSpeech(data.agent_question, audioSrc, () => {
           isSendingAnswerRef.current = false;
           if (!aiCallActiveRef.current) return;
 
@@ -1141,7 +1152,7 @@ export default function SaharaDedicatedMobileApp() {
                         <span className="text-blue-700 font-medium italic text-xs">सहारा AI का सवाल सुनिए...</span>
                       ) : (
                         <span className="text-slate-400 font-normal italic text-xs">
-                          बोलिए, माइक आपकी आवाज़ पहचान रहा है... (जैसे: &ldquo;सब ठीक है, बस थोड़ा सा सिरदर्द है&rdquo;)
+                          बोलिए, सहारा AI सुन रही है... (बोलना पूरा होने पर 3.5 सेकंड में अपने-आप भेजा जाएगा, या &ldquo;उत्तर भेजें&rdquo; दबाएँ)
                         </span>
                       )}
                     </p>

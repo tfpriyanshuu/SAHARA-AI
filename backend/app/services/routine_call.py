@@ -159,7 +159,7 @@ Return strictly JSON:
     # 3. Direct Medicine Inquiries
     if any(q in reply_clean for q in ["दवाई", "दवा", "tablet", "medicine", "goli"]):
         return {
-            "reply": f"जी हर्षित जी, आपकी सुबह बीपी की दवाई तेलमिसारटन और दोपहर 1:30 बजे शुगर की दवाई मेटफ़ॉर्मिन है। क्या आपने आज दोपहर की दवाई ले ली?",
+            "reply": f"जी हर्षित जी, आपकी सुबह बीपी की दवाई तेलमिसारटन और दोपहर डेढ़ बजे शुगर की दवाई मेटफ़ॉर्मिन है। क्या आपने आज दोपहर की दवाई ले ली?",
             "is_emergency": False,
             "emergency_reason": None,
             "is_complete": False,
@@ -191,7 +191,7 @@ Return strictly JSON:
     is_positive = any(p in reply_clean for p in ["ठीक हूँ", "बढ़िया", "अच्छा हूँ", "मस्त", "theek hu", "theek", "1", "अच्छा"]) and not is_unwell_or_distressed(reply_clean)
     if is_positive:
         return {
-            "reply": f"जी बहुत अच्छा लगा सुनकर कि आप ठीक हैं! क्या आज आपने दोपहर का खाना खा लिया और 1:30 बजे वाली दवाई समय पर ले ली?",
+            "reply": f"जी बहुत अच्छा लगा सुनकर कि आप ठीक हैं! क्या आज आपने दोपहर का खाना खा लिया और दोपहर डेढ़ बजे वाली दवाई समय पर ले ली?",
             "is_emergency": False,
             "emergency_reason": None,
             "is_complete": False,
@@ -222,7 +222,7 @@ Return strictly JSON:
     if step_index <= 1:
         general_reply = f"जी मैं सुन रही हूँ। आप बताइए आज आपका खाना-पीना और सेहत कैसी रही?"
     elif step_index == 2:
-        general_reply = f"जी बिल्कुल। क्या आपने 1:30 बजे वाली शुगर की दवाई ले ली है?"
+        general_reply = f"जी बिल्कुल। क्या आपने दोपहर डेढ़ बजे वाली शुगर की दवाई ले ली है?"
     else:
         general_reply = f"जी समझ गई। और कोई बात जो आप बताना चाहते हों?"
 
@@ -292,13 +292,10 @@ def get_routine_call_step(
     spoken_text = turn_result["reply"]
     is_emergency = turn_result["is_emergency"]
 
-    # Fast synthesis via Sarvam AI at natural pace 1.0 (< 1.2s non-blocking)
+    # Direct synthesis via Sarvam AI Priya Voice so the voice is 100% consistent across every turn!
     sarvam_audio = None
     try:
-        future = _SARVAM_EXECUTOR.submit(synthesize_speech_sarvam, spoken_text, "priya", 1.0)
-        sarvam_audio = future.result(timeout=1.2)
-    except concurrent.futures.TimeoutError:
-        logger.info("Sarvam TTS exceeded 1.2s cap - browser speaks immediately with native zero-latency voice")
+        sarvam_audio = synthesize_speech_sarvam(spoken_text, speaker="priya", pace=1.0)
     except Exception as e:
         logger.warning(f"Sarvam audio notice: {e}")
 
